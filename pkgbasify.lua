@@ -379,7 +379,7 @@ end
 local function confirm_risk()
 	print("Running this tool will irreversibly modify your system to use pkgbase.")
 	print("This tool and pkgbase are experimental and may result in a broken system.")
-	print("It is highly recommend to backup your system before proceeding.")
+	print("It is highly recommended to backup your system before proceeding.")
 	return prompt_yn("Do you accept this risk and wish to continue?")
 end
 
