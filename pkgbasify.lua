@@ -382,6 +382,37 @@ local function confirm_risk()
 	return prompt_yn("Do you accept this risk and wish to continue?")
 end
 
+local function check_etc_symlinks()
+	local warnings = false
+	local known_symlinks = {
+		["/etc/aliases"] = true,
+		["/etc/localtime"] = true,
+		["/etc/motd"] = true,
+		["/etc/os-release"] = true,
+		["/etc/rmt"] = true,
+		["/etc/termcap"] = true,
+		["/etc/unbound"] = true,
+	}
+	local symlinks = capture("find /etc -type l ! -path '/etc/ssl/*' ! -path '/etc/mail/certs/*' 2>/dev/null || true")
+
+	for line in symlinks:gmatch("[^\n]+") do
+		if not known_symlinks[line] then
+			if not warnings then
+				print("Found unexpected symlinks in /etc/:")
+				warnings = true
+			end
+			print("  " .. line)
+		end
+	end
+
+	if warnings then
+		print("These symlinks may cause issues during pkgbase conversion, if they")
+		print("conflict with files that may be installed by base system packages.")
+		print("Consider removing them temporarily before running pkgbasify, and")
+		print("restoring them after the conversion is complete, before rebooting.")
+	end
+end
+
 local function check_no_readonly_var_empty()
 	if not os.execute("test -e /var/empty/.zfs") then
 		return true -- Not a zfs filesystem
@@ -462,6 +493,8 @@ This will cause conversion to fail as pkg will be unable to set the time of
 ]])
 		os.exit(1)
 	end
+
+	check_etc_symlinks()
 	if not confirm_risk() then
 		print("Canceled")
 		os.exit(1)
