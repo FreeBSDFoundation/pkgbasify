@@ -319,12 +319,6 @@ local function select_packages(pkg)
 	if os.execute("test -e /usr/lib/debug/usr/lib32/libc.so.7.debug") then
 		append_list(selected, lib32_dbg)
 	end
-	if non_empty_dir("/usr/src") then
-		if #src == 0 then
-			warn("FreeBSD-src package not available for target FreeBSD release")
-		end
-		append_list(selected, src)
-	end
 	if non_empty_dir("/usr/tests") then
 		append_list(selected, tests)
 	end

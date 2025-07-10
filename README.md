@@ -49,6 +49,8 @@ pkgbasify performs the following steps:
 3. Select packages that correspond to the currently installed base system components.
    - For example: if the lib32 component is not already installed,
      pkgbasify will skip installation of lib32 packages.
+   - pkgbasify never installs the `FreeBSD-src` package even if `/usr/src` is present and non-empty.
+     This prevents unwanted overwriting of potentially modified source files and/or a VCS repository.
 4. Prompt the user to create a "pre-pkgbasify" boot environment using [bectl(8)] if possible.
 5. Install the selected packages with [pkg(8)],
    overwriting base system files and creating `.pkgsave` files as per standard [pkg(8)] behavior.
