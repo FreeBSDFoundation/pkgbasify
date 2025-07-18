@@ -161,7 +161,7 @@ local function execute_conversion(workdir, package_list)
 	-- linker.hints was recreated at kernel install time, when we had .pkgsave files
 	-- of previous modules. A new linker.hints file will be created during the next
 	-- boot of the OS.
-	check_err(os.remove("/boot/kernel/linker.hints"))
+	check_err(os.execute("rm -f /boot/kernel/linker.hints"))
 
 	if err_post_install then
 		print([[
