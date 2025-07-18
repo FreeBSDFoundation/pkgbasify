@@ -108,7 +108,8 @@ local function merge_pkgsaves(workdir)
 			-- file attributes of theirs (mode, ownership, etc). This is critical
 			-- when merging executable scripts in /etc/rc.d/ for example.
 			if os.execute("diff3 -m " .. ours .. " " .. old .. " " .. theirs .. " > " .. merged) and
-					os.execute("cat " .. merged .. " > " .. theirs) then
+				os.execute("cat " .. merged .. " > " .. theirs)
+			then
 				print("Merged " .. theirs)
 			else
 				print("Failed to merge " .. theirs .. ", manual intervention may be necessary")
