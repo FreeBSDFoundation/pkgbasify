@@ -41,10 +41,6 @@ local function append_list(list, other)
 	end
 end
 
-local function warn(msg)
-	io.stderr:write("Warning: " .. msg .. "\n")
-end
-
 local function err(msg)
 	io.stderr:write("Error: " .. msg .. "\n")
 end
@@ -367,11 +363,6 @@ local function setup_conversion(workdir)
 	return select_packages(pkg)
 end
 
-local function already_pkgbase()
-	return os.execute("pkg -N > /dev/null 2>&1") and
-		os.execute("pkg which /usr/bin/uname > /dev/null 2>&1")
-end
-
 local function bootstrap_pkg()
 	-- Some versions of pkg do not handle `bootstrap -y` gracefully.
 	-- This has been fixed in https://github.com/freebsd/pkg/pull/2426 but
@@ -440,7 +431,21 @@ end
 
 local function main()
 	local options = parse_options()
-	if not options.force and already_pkgbase() then
+
+	if capture("id -u") ~= "0" then
+		fatal("This tool must be run as the root user.")
+	end
+	-- It is possible to have a pkgbase system without pkg bootstrapped, for
+	-- example if bsdinstall was used to install a pkgbase system. Therefore
+	-- we must bootstrap pkg to be able to check if the system is already
+	-- using pkgbase.
+	if not bootstrap_pkg() then
+		fatal("Failed to bootstrap pkg.")
+	end
+
+	if not options.force and
+		os.execute("pkg which /usr/bin/uname > /dev/null 2>&1")
+	then
 		fatal([[
 The system is already using pkgbase.
 Pass --force to run pkgbasify anyway, for example to fix a partial conversion.]])
@@ -460,13 +465,6 @@ This will cause conversion to fail as pkg will be unable to set the time of
 	if not confirm_risk() then
 		print("Canceled")
 		os.exit(1)
-	end
-	if capture("id -u") ~= "0" then
-		fatal("This tool must be run as the root user.")
-	end
-
-	if not bootstrap_pkg() then
-		fatal("Failed to bootstrap pkg.")
 	end
 
 	local workdir = capture("mktemp -d -t pkgbasify")
