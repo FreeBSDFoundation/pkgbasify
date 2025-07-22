@@ -288,12 +288,11 @@ local function select_packages(pkg)
 			table.insert(base, package)
 		end
 	end
+	-- No asserts on lib32(-dbg) since they aren't present for all targets
 	assert(#kernel == 1)
 	assert(#kernel_dbg == 1)
 	assert(#base > 0)
 	assert(#base_dbg > 0)
-	assert(#lib32 > 0)
-	assert(#lib32_dbg > 0)
 	assert(#tests > 0)
 	-- FreeBSD-src was not yet available for FreeBSD 14.0
 	assert(#src >= 0)
