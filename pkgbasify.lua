@@ -383,7 +383,6 @@ local function confirm_risk()
 end
 
 local function check_etc_symlinks()
-	local warnings = false
 	local known_symlinks = {
 		["/etc/aliases"] = true,
 		["/etc/localtime"] = true,
@@ -393,24 +392,28 @@ local function check_etc_symlinks()
 		["/etc/termcap"] = true,
 		["/etc/unbound"] = true,
 	}
-	local symlinks = capture("find /etc -type l ! -path '/etc/ssl/*' ! -path '/etc/mail/certs/*' 2>/dev/null || true")
+	local found = capture("find /etc -type l ! -path '/etc/ssl/*' ! -path '/etc/mail/certs/*' 2>/dev/null || true")
 
-	for line in symlinks:gmatch("[^\n]+") do
-		if not known_symlinks[line] then
-			if not warnings then
-				print("Found unexpected symlinks in /etc/:")
-				warnings = true
-			end
-			print("  " .. line)
+	local unexpected = {}
+	for link in found:gmatch("[^\n]+") do
+		if not known_symlinks[link] then
+			table.insert(unexpected, link)
 		end
 	end
 
-	if warnings then
-		print("These symlinks may cause issues during pkgbase conversion, if they")
-		print("conflict with files that may be installed by base system packages.")
-		print("Consider removing them temporarily before running pkgbasify, and")
-		print("restoring them after the conversion is complete, before rebooting.")
+	if #unexpected == 0 then
+		return true
 	end
+
+	print("\nFound unexpected symlinks in /etc:")
+	for _, link in ipairs(unexpected) do
+		print("    " .. link)
+	end
+	print([[
+These symlinks will be overwritten by pkg(8) if they conflict with files in
+base system packages. Please ensure that your system configuration will not be
+broken if these symlinks are overwritten.]])
+	return prompt_yn("Continue and overwrite symlinks in /etc?")
 end
 
 local function check_no_readonly_var_empty()
@@ -493,9 +496,11 @@ This will cause conversion to fail as pkg will be unable to set the time of
 ]])
 		os.exit(1)
 	end
-
-	check_etc_symlinks()
 	if not confirm_risk() then
+		print("Canceled")
+		os.exit(1)
+	end
+	if not check_etc_symlinks() then
 		print("Canceled")
 		os.exit(1)
 	end
