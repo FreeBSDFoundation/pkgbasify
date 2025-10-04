@@ -10,6 +10,7 @@
 -- See also the pkgbase wiki page: https://wiki.freebsd.org/PkgBase
 
 local options = {
+	create_repo_conf = true,
 	repo_name = "FreeBSD-base"
 }
 
@@ -129,12 +130,14 @@ local function merge_pkgsaves(workdir)
 end
 
 local function execute_conversion(workdir, package_list)
-	if os.execute("test -e " .. repo_conf_file()) then
-		print("Overwriting " .. repo_conf_file())
-	else
-		print("Creating " .. repo_conf_file())
+	if options.create_repo_conf then
+		if os.execute("test -e " .. repo_conf_file()) then
+			print("Overwriting " .. repo_conf_file())
+		else
+			print("Creating " .. repo_conf_file())
+		end
+		create_base_repo_conf(repo_conf_file())
 	end
-	create_base_repo_conf(repo_conf_file())
 
 	if capture("pkg config BACKUP_LIBRARIES") ~= "yes" then
 		print("Adding BACKUP_LIBRARIES=yes to /usr/local/etc/pkg.conf")
@@ -362,16 +365,18 @@ local function setup_conversion(workdir)
 		os.exit(1)
 	end
 
-	-- TODO using grep and test here is not idiomatic lua, improve this
-	if not os.execute("pkg config REPOS_DIR | grep " .. repo_conf_dir .. " > /dev/null 2>&1") then
-		fatal("Non-standard pkg REPOS_DIR config does not include " .. repo_conf_dir)
-	end
+	if options.create_repo_conf then
+		-- TODO using grep and test here is not idiomatic lua, improve this
+		if not os.execute("pkg config REPOS_DIR | grep " .. repo_conf_dir .. " > /dev/null 2>&1") then
+			fatal("Non-standard pkg REPOS_DIR config does not include " .. repo_conf_dir)
+		end
 
-	-- The repo_conf_file is created/overwritten in execute_conversion()
-	if os.execute("test -e " .. repo_conf_file()) then
-		if not prompt_yn("Overwrite " .. repo_conf_file() .. "?") then
-			print("Canceled")
-			os.exit(1)
+		-- The repo_conf_file is created/overwritten in execute_conversion()
+		if os.execute("test -e " .. repo_conf_file()) then
+			if not prompt_yn("Overwrite " .. repo_conf_file() .. "?") then
+				print("Canceled")
+				os.exit(1)
+			end
 		end
 	end
 
@@ -456,10 +461,12 @@ end
 local usage = [[
 Usage: pkgbasify.lua [options]
 
-    -h, --help          Print this usage message and exit
-    --force             Attempt conversion even if /usr/bin/uname
-                        is owned by a package.
-    --repo-name <name>  Name of the pkgbase repository
+    -h, --help            Print this usage message and exit
+    --force               Attempt conversion even if /usr/bin/uname
+                          is owned by a package.
+    --repo-name <name>    Name of the pkgbase repository
+    --no-create-repo-conf Don't create a repository configuration,
+                          requires the user to configure a pkgbase repository
 ]]
 
 local function parse_options()
@@ -470,6 +477,8 @@ local function parse_options()
 			os.exit(0)
 		elseif arg[i] == "--force" then
 			options.force = true
+		elseif arg[i] == "--no-create-repo-conf" then
+			options.create_repo_conf = false
 		elseif arg[i] == "--repo-name" then
 			i = i + 1
 			if i > #arg then
