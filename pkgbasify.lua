@@ -9,8 +9,14 @@
 
 -- See also the pkgbase wiki page: https://wiki.freebsd.org/PkgBase
 
-local repos_conf_dir <const> = "/usr/local/etc/pkg/repos/"
-local repos_conf_file <const> = repos_conf_dir .. "FreeBSD-base.conf"
+local options = {
+	repo_name = "FreeBSD-base"
+}
+
+local repo_conf_dir <const> = "/usr/local/etc/pkg/repos/"
+local function repo_conf_file()
+	return repo_conf_dir .. options.repo_name .. ".conf"
+end
 
 -- Run a command using the OS shell and capture the stdout
 -- Strips exactly one trailing newline if present, does not strip any other whitespace.
@@ -78,14 +84,14 @@ local function create_base_repo_conf(path)
 	assert(os.execute("mkdir -p " .. path:match(".*/")))
 	local f <close> = assert(io.open(path, "w"))
 	assert(f:write(string.format([[
-FreeBSD-base: {
+%s: {
   url: "%s",
   mirror_type: "srv",
   signature_type: "fingerprints",
   fingerprints: "/usr/share/keys/pkg",
   enabled: yes
 }
-]], base_repo_url())))
+]], options.repo_name, base_repo_url())))
 end
 
 -- Set to true if the pkg install or any later step errors. We will always
@@ -123,12 +129,12 @@ local function merge_pkgsaves(workdir)
 end
 
 local function execute_conversion(workdir, package_list)
-	if os.execute("test -e " .. repos_conf_file) then
-		print("Overwriting " .. repos_conf_file)
+	if os.execute("test -e " .. repo_conf_file()) then
+		print("Overwriting " .. repo_conf_file())
 	else
-		print("Creating " .. repos_conf_file)
+		print("Creating " .. repo_conf_file())
 	end
-	create_base_repo_conf(repos_conf_file)
+	create_base_repo_conf(repo_conf_file())
 
 	if capture("pkg config BACKUP_LIBRARIES") ~= "yes" then
 		print("Adding BACKUP_LIBRARIES=yes to /usr/local/etc/pkg.conf")
@@ -139,7 +145,9 @@ local function execute_conversion(workdir, package_list)
 	local packages = table.concat(package_list, " ")
 	-- Fetch the packages separately so that we can retry if there is a temporary
 	-- network issue or similar.
-	while not os.execute("pkg install --fetch-only -y -r FreeBSD-base " .. packages) do
+	while not os.execute("pkg install --fetch-only -y -r " ..
+		options.repo_name .. " " .. packages)
+	do
 		if not prompt_yn("Fetching packages failed, try again?") then
 			print("Canceled")
 			os.exit(1)
@@ -149,7 +157,8 @@ local function execute_conversion(workdir, package_list)
 	-- pkg install is not necessarily fully atomic, even if it fails some subset
 	-- of the packages may have been installed. Therefore, we must attempt all
 	-- followup work even if install fails.
-	check_err(os.execute("pkg install --no-repo-update -y -r FreeBSD-base " .. packages))
+	check_err(os.execute("pkg install --no-repo-update -y -r " ..
+		options.repo_name .. " " .. packages))
 
 	merge_pkgsaves(workdir)
 
@@ -197,8 +206,10 @@ end
 local function rquery_osversion(pkg)
 	-- It feels like pkg should provide a less ugly way to do this.
 	-- TODO is FreeBSD-runtime the correct pkg to check against?
-	local tags = capture(pkg .. "rquery -r FreeBSD-base %At FreeBSD-runtime"):gmatch("[^\n]+")
-	local values = capture(pkg .. "rquery -r FreeBSD-base %Av FreeBSD-runtime"):gmatch("[^\n]+")
+	local tags = capture(pkg .. "rquery -r " .. options.repo_name ..
+		" %At FreeBSD-runtime"):gmatch("[^\n]+")
+	local values = capture(pkg .. "rquery -r " .. options.repo_name ..
+		" %Av FreeBSD-runtime"):gmatch("[^\n]+")
 	while true do
 		local tag = tags()
 		local value = values()
@@ -269,7 +280,7 @@ local function select_packages(pkg)
 	local src = {}
 	local tests = {}
 
-	local rquery = capture(pkg .. "rquery -r FreeBSD-base %n")
+	local rquery = capture(pkg .. "rquery -r " .. options.repo_name .. " %n")
 	for package in rquery:gmatch("[^\n]+") do
 		if package == "FreeBSD-src" or package:match("FreeBSD%-src%-.*") then
 			table.insert(src, package)
@@ -340,7 +351,7 @@ local function setup_conversion(workdir)
 	-- Use a temporary repo configuration file for the setup phase so that there
 	-- is nothing to clean up on failure.
 	local tmp_repos = workdir .. "/pkgrepos/"
-	create_base_repo_conf(tmp_repos .. "FreeBSD-base.conf")
+	create_base_repo_conf(tmp_repos .. options.repo_name .. ".conf")
 
 	local pkg = "pkg -o PKG_DBDIR=" .. tmp_db .. " -R " .. tmp_repos .. " "
 
@@ -352,13 +363,13 @@ local function setup_conversion(workdir)
 	end
 
 	-- TODO using grep and test here is not idiomatic lua, improve this
-	if not os.execute("pkg config REPOS_DIR | grep " .. repos_conf_dir .. " > /dev/null 2>&1") then
-		fatal("Non-standard pkg REPOS_DIR config does not include " .. repos_conf_dir)
+	if not os.execute("pkg config REPOS_DIR | grep " .. repo_conf_dir .. " > /dev/null 2>&1") then
+		fatal("Non-standard pkg REPOS_DIR config does not include " .. repo_conf_dir)
 	end
 
-	-- The repos_conf_file is created/overwritten in execute_conversion()
-	if os.execute("test -e " .. repos_conf_file) then
-		if not prompt_yn("Overwrite " .. repos_conf_file .. "?") then
+	-- The repo_conf_file is created/overwritten in execute_conversion()
+	if os.execute("test -e " .. repo_conf_file()) then
+		if not prompt_yn("Overwrite " .. repo_conf_file() .. "?") then
 			print("Canceled")
 			os.exit(1)
 		end
@@ -445,30 +456,37 @@ end
 local usage = [[
 Usage: pkgbasify.lua [options]
 
-    -h, --help  Print this usage message and exit
-    --force     Attempt conversion even if /usr/bin/uname
-                is owned by a package.
+    -h, --help          Print this usage message and exit
+    --force             Attempt conversion even if /usr/bin/uname
+                        is owned by a package.
+    --repo-name <name>  Name of the pkgbase repository
 ]]
 
 local function parse_options()
-	local options = {}
-	for _, a in ipairs(arg) do
-		if a == "-h" or a == "--help" then
+	local i = 1
+	while i <= #arg do
+		if arg[i] == "-h" or arg[i] == "--help" then
 			io.stdout:write(usage)
 			os.exit(0)
-		elseif a == "--force" then
+		elseif arg[i] == "--force" then
 			options.force = true
+		elseif arg[i] == "--repo-name" then
+			i = i + 1
+			if i > #arg then
+				fatal("--repo-name requires an argument")
+			end
+			options.repo_name = arg[i]
 		else
-			io.stderr:write("Error: unknown option " .. a .. "\n")
+			io.stderr:write("Error: unknown option " .. arg[i] .. "\n")
 			io.stderr:write(usage)
 			os.exit(1)
 		end
+		i = i + 1
 	end
-	return options
 end
 
 local function main()
-	local options = parse_options()
+	parse_options()
 
 	if capture("id -u") ~= "0" then
 		fatal("This tool must be run as the root user.")
