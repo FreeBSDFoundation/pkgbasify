@@ -464,7 +464,7 @@ Usage: pkgbasify.lua [options]
     -h, --help            Print this usage message and exit
     --force               Attempt conversion even if /usr/bin/uname
                           is owned by a package.
-    --repo-name <name>    Name of the pkgbase repository
+    --repo-name <name>    Name of the pkgbase repository (Default: FreeBSD-base)
     --no-create-repo-conf Don't create a repository configuration,
                           requires the user to configure a pkgbase repository
 ]]
