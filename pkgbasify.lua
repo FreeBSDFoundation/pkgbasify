@@ -57,17 +57,19 @@ local function fatal(msg)
 	os.exit(1)
 end
 
+local function freebsd_version()
+	-- e.g. 15.0-CURRENT, 14.2-STABLE, 14.1-RELEASE, 14.1-RELEASE-p6,
+	local raw = capture("freebsd-version")
+	return assert(raw:match("(%d+)%.(%d+)%-(%u+)"))
+end
+
 -- Returns the URL for the pkgbase repository that matches the version
 -- reported by freebsd-version(1)
 local function base_repo_url()
-	-- e.g. 15.0-CURRENT, 14.2-STABLE, 14.1-RELEASE, 14.1-RELEASE-p6,
-	local raw = capture("freebsd-version")
-	local major, minor, branch = assert(raw:match("(%d+)%.(%d+)%-(%u+)"))
-
+	local major, minor, branch = freebsd_version()
 	if math.tointeger(major) < 14 then
 		fatal("Unsupported FreeBSD version: " .. raw)
 	end
-
 	if branch == "RELEASE" or branch:match("^BETA") or branch:match("^RC") then
 		return "pkg+https://pkg.FreeBSD.org/${ABI}/base_release_" .. minor
 	elseif branch == "CURRENT" or
@@ -84,7 +86,14 @@ end
 local function create_base_repo_conf(path)
 	assert(os.execute("mkdir -p " .. path:match(".*/")))
 	local f <close> = assert(io.open(path, "w"))
-	assert(f:write(string.format([[
+	if math.tointeger(freebsd_version()) >= 15 then
+		assert(f:write(string.format([[
+%s: {
+  enabled: yes
+}
+]], options.repo_name)))
+	else
+		assert(f:write(string.format([[
 %s: {
   url: "%s",
   mirror_type: "srv",
@@ -93,6 +102,7 @@ local function create_base_repo_conf(path)
   enabled: yes
 }
 ]], options.repo_name, base_repo_url())))
+	end
 end
 
 -- Set to true if the pkg install or any later step errors. We will always
@@ -356,7 +366,7 @@ local function setup_conversion(workdir)
 	local tmp_repos = workdir .. "/pkgrepos/"
 	create_base_repo_conf(tmp_repos .. options.repo_name .. ".conf")
 
-	local pkg = "pkg -o PKG_DBDIR=" .. tmp_db .. " -R " .. tmp_repos .. " "
+	local pkg = "pkg -o PKG_DBDIR=" .. tmp_db .. " -o REPOS_DIR=/etc/pkg," .. tmp_repos .. " "
 
 	assert(os.execute(pkg .. "-o IGNORE_OSVERSION=yes update"))
 
