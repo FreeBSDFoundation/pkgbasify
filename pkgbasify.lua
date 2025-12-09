@@ -11,12 +11,15 @@
 
 local options = {
 	create_repo_conf = true,
-	repo_name = "FreeBSD-base"
+	repo_name = "FreeBSD-base",
+	rootdir = "/"
 }
 
-local repo_conf_dir <const> = "/usr/local/etc/pkg/repos/"
+local function repo_conf_dir()
+	return options.rootdir .. "/usr/local/etc/pkg/repos/"
+end
 local function repo_conf_file()
-	return repo_conf_dir .. options.repo_name .. ".conf"
+	return repo_conf_dir() .. options.repo_name .. ".conf"
 end
 
 -- Run a command using the OS shell and capture the stdout
@@ -119,11 +122,12 @@ end
 local function merge_pkgsaves(workdir)
 	local old_dir = workdir .. "/current"
 	for old in capture("find " .. old_dir .. " -type f"):gmatch("[^\n]+") do
-		local theirs = old:sub(#old_dir + 1)
-		assert(theirs:sub(1,1) == "/")
+		local path = old:sub(#old_dir + 1)
+		assert(path:sub(1,1) == "/")
+		local theirs = options.rootdir .. path
 		local ours = theirs .. ".pkgsave"
 		if os.execute("test -e " .. ours) then
-			local merged = workdir .. "/merged/" .. theirs
+			local merged = workdir .. "/merged/" .. path
 			check_err(os.execute("mkdir -p " .. merged:match(".*/")))
 			-- Using cat and a redirection rather than, for example, mv preserves
 			-- file attributes of theirs (mode, ownership, etc). This is critical
@@ -155,11 +159,14 @@ local function execute_conversion(workdir, package_list)
 		assert(f:write("BACKUP_LIBRARIES=yes\n"))
 	end
 
+	local pkg = "pkg --rootdir " .. options.rootdir ..
+		" -o REPOS_DIR=" .. options.rootdir .. "/etc/pkg/," .. repo_conf_dir() .. " "
+
 	local packages = table.concat(package_list, " ")
 	-- Fetch the packages separately so that we can retry if there is a temporary
 	-- network issue or similar.
-	while not os.execute("pkg install --fetch-only -y -r " ..
-		options.repo_name .. " " .. packages)
+	while not os.execute(pkg .. " install --fetch-only -y -r "
+		.. options.repo_name .. " " .. packages)
 	do
 		if not prompt_yn("Fetching packages failed, try again?") then
 			print("Canceled")
@@ -170,24 +177,24 @@ local function execute_conversion(workdir, package_list)
 	-- pkg install is not necessarily fully atomic, even if it fails some subset
 	-- of the packages may have been installed. Therefore, we must attempt all
 	-- followup work even if install fails.
-	check_err(os.execute("pkg install --no-repo-update -y -r " ..
+	check_err(os.execute(pkg .. " install --no-repo-update -y -r " ..
 		options.repo_name .. " " .. packages))
 
 	merge_pkgsaves(workdir)
 
-	if os.execute("service sshd status > /dev/null 2>&1") then
-		print("Restarting sshd")
-		check_err(os.execute("service sshd restart"))
+	if options.rootdir == "/" then
+		if os.execute("service sshd status > /dev/null 2>&1") then
+			print("Restarting sshd")
+			check_err(os.execute("service sshd restart"))
+		end
 	end
 
-	check_err(os.execute("pwd_mkdb -p /etc/master.passwd"))
-	check_err(os.execute("cap_mkdb /etc/login.conf"))
+	check_err(os.execute("pwd_mkdb -d " .. options.rootdir ..
+		"/etc -p " .. options.rootdir .. "/etc/master.passwd"))
+	check_err(os.execute("cap_mkdb " .. options.rootdir .. "/etc/login.conf"))
 
-	-- From https://wiki.freebsd.org/PkgBase:
-	-- linker.hints was recreated at kernel install time, when we had .pkgsave files
-	-- of previous modules. A new linker.hints file will be created during the next
-	-- boot of the OS.
-	check_err(os.execute("rm -f /boot/kernel/linker.hints"))
+	-- Ensure linker.hints is regenerated at next boot.
+	check_err(os.execute("rm -f " .. options.rootdir .. "/boot/kernel/linker.hints"))
 
 	if err_post_install then
 		print([[
@@ -201,16 +208,20 @@ the --force argument to try and complete the conversion.
 ]])
 		os.exit(1)
 	else
-		print([[
+		local prefix = options.rootdir
+		if prefix == "/" then
+			prefix = ""
+		end
+		print(string.format([[
 Conversion finished.
 
 Please verify that the contents of the following critical files are as expected:
-/etc/master.passwd
-/etc/group
-/etc/ssh/sshd_config
+%s/etc/master.passwd
+%s/etc/group
+%s/etc/ssh/sshd_config
 
 After verifying those files, restart the system.
-]])
+]], prefix, prefix, prefix))
 		os.exit(0)
 	end
 end
@@ -329,21 +340,21 @@ local function select_packages(pkg)
 	append_list(selected, kernel)
 	append_list(selected, base)
 
-	if non_empty_dir("/usr/lib/debug/boot/kernel") then
+	if non_empty_dir(options.rootdir .. "/usr/lib/debug/boot/kernel") then
 		append_list(selected, kernel_dbg)
 	end
-	if os.execute("test -e /usr/lib/debug/lib/libc.so.7.debug") then
+	if os.execute("test -e " .. options.rootdir .. "/usr/lib/debug/lib/libc.so.7.debug") then
 		append_list(selected, base_dbg)
 	end
 	-- Checking if /usr/lib32 is non-empty is not sufficient, as base.txz
 	-- includes several empty /usr/lib32 subdirectories.
-	if os.execute("test -e /usr/lib32/libc.so.7") then
+	if os.execute("test -e " .. options.rootdir .. "/usr/lib32/libc.so.7") then
 		append_list(selected, lib32)
 	end
-	if os.execute("test -e /usr/lib/debug/usr/lib32/libc.so.7.debug") then
+	if os.execute("test -e " .. options.rootdir .. "/usr/lib/debug/usr/lib32/libc.so.7.debug") then
 		append_list(selected, lib32_dbg)
 	end
-	if non_empty_dir("/usr/tests") then
+	if non_empty_dir(options.rootdir .. "/usr/tests") then
 		append_list(selected, tests)
 	end
 
@@ -353,7 +364,8 @@ end
 local function setup_conversion(workdir)
 	-- We must make a copy of the etcupdate db before running pkg install as
 	-- the etcupdate db matching the pre-pkgbasify system state will be overwritten.
-	assert(os.execute("cp -a /var/db/etcupdate/current " .. workdir .. "/current"))
+	assert(os.execute("cp -a " .. options.rootdir .. "/var/db/etcupdate/current " ..
+		workdir .. "/current"))
 
 	-- Use a temporary pkg db until we are sure we will carry through with the
 	-- conversion to avoid polluting the standard one.
@@ -366,7 +378,7 @@ local function setup_conversion(workdir)
 	local tmp_repos = workdir .. "/pkgrepos/"
 	create_base_repo_conf(tmp_repos .. options.repo_name .. ".conf")
 
-	local pkg = "pkg -o PKG_DBDIR=" .. tmp_db .. " -o REPOS_DIR=/etc/pkg," .. tmp_repos .. " "
+	local pkg = "pkg -o PKG_DBDIR=" .. tmp_db .. " -o REPOS_DIR=" .. options.rootdir .. "/etc/pkg," .. tmp_repos .. " "
 
 	assert(os.execute(pkg .. "-o IGNORE_OSVERSION=yes update"))
 
@@ -376,9 +388,13 @@ local function setup_conversion(workdir)
 	end
 
 	if options.create_repo_conf then
+		-- Since the REPOS_DIR config option is not affected by --rootdir, it's not easy
+		-- to check the value for the system in the options.rootdir.
 		-- TODO using grep and test here is not idiomatic lua, improve this
-		if not os.execute("pkg config REPOS_DIR | grep " .. repo_conf_dir .. " > /dev/null 2>&1") then
-			fatal("Non-standard pkg REPOS_DIR config does not include " .. repo_conf_dir)
+		if options.rootdir == "/" and
+			not os.execute("pkg config REPOS_DIR | grep " .. repo_conf_dir() .. " > /dev/null 2>&1")
+		then
+			fatal("Non-standard pkg REPOS_DIR config does not include " .. repo_conf_dir())
 		end
 
 		-- The repo_conf_file is created/overwritten in execute_conversion()
@@ -413,16 +429,23 @@ local function confirm_risk()
 end
 
 local function check_etc_symlinks()
+	local etc
+	if options.rootdir == "/" then
+		etc = "/etc"
+	else
+		etc = options.rootdir .. "/etc"
+	end
 	local known_symlinks = {
-		["/etc/aliases"] = true,
-		["/etc/localtime"] = true,
-		["/etc/motd"] = true,
-		["/etc/os-release"] = true,
-		["/etc/rmt"] = true,
-		["/etc/termcap"] = true,
-		["/etc/unbound"] = true,
+		[etc .. "/aliases"] = true,
+		[etc .. "/localtime"] = true,
+		[etc .. "/motd"] = true,
+		[etc .. "/os-release"] = true,
+		[etc .. "/rmt"] = true,
+		[etc .. "/termcap"] = true,
+		[etc .. "/unbound"] = true,
 	}
-	local found = capture("find /etc -type l ! -path '/etc/ssl/*' ! -path '/etc/mail/certs/*' 2>/dev/null || true")
+	local found = capture("find " .. etc .. " -type l ! -path '" .. etc ..
+		"/ssl/*' ! -path '" .. etc .. "/mail/certs/*' 2>/dev/null || true")
 
 	local unexpected = {}
 	for link in found:gmatch("[^\n]+") do
@@ -435,7 +458,7 @@ local function check_etc_symlinks()
 		return true
 	end
 
-	print("\nFound unexpected symlinks in /etc:")
+	print("\nFound unexpected symlinks in " .. etc)
 	for _, link in ipairs(unexpected) do
 		print("    " .. link)
 	end
@@ -443,7 +466,7 @@ local function check_etc_symlinks()
 These symlinks will be overwritten by pkg(8) if they conflict with files in
 base system packages. Please ensure that your system configuration will not be
 broken if these symlinks are overwritten.]])
-	return prompt_yn("Continue and overwrite symlinks in /etc?")
+	return prompt_yn("Continue and overwrite symlinks in " .. etc .. "?")
 end
 
 local function check_no_readonly_var_empty()
@@ -455,7 +478,8 @@ end
 
 local function check_disk_space()
 	-- KiB available on the root filesystem
-	local avail = tonumber(capture("df -k / | awk '{x=$4}END{print x}'"))
+	local avail = tonumber(capture(
+		"df -k " .. options.rootdir .. " | awk '{x=$4}END{print x}'"))
 	if avail >= (5 * 1024 * 1024) then
 		return true
 	else
@@ -477,6 +501,7 @@ Usage: pkgbasify.lua [options]
     --repo-name <name>    Name of the pkgbase repository (Default: FreeBSD-base)
     --no-create-repo-conf Don't create a repository configuration,
                           requires the user to configure a pkgbase repository
+    --rootdir <dir>  Operate on the given directory rather than /
 ]]
 
 local function parse_options()
@@ -495,6 +520,12 @@ local function parse_options()
 				fatal("--repo-name requires an argument")
 			end
 			options.repo_name = arg[i]
+		elseif arg[i] == "--rootdir" then
+			i = i + 1
+			if i > #arg then
+				fatal("--rootdir requires an argument")
+			end
+			options.rootdir = arg[i]
 		else
 			io.stderr:write("Error: unknown option " .. arg[i] .. "\n")
 			io.stderr:write(usage)
@@ -519,7 +550,7 @@ local function main()
 	end
 
 	if not options.force and
-		os.execute("pkg which /usr/bin/uname > /dev/null 2>&1")
+		os.execute("pkg --rootdir " .. options.rootdir .. " which /usr/bin/uname > /dev/null 2>&1")
 	then
 		fatal([[
 The system is already using pkgbase.
@@ -529,7 +560,7 @@ Pass --force to run pkgbasify anyway, for example to fix a partial conversion.]]
 		print("Canceled")
 		os.exit(1)
 	end
-	if not check_no_readonly_var_empty() then
+	if options.rootdir == "/" and not check_no_readonly_var_empty() then
 		print([[
 /var/empty is a readonly zfs filesystem.
 This will cause conversion to fail as pkg will be unable to set the time of
@@ -550,7 +581,9 @@ This will cause conversion to fail as pkg will be unable to set the time of
 
 	local package_list = setup_conversion(workdir)
 
-	create_boot_environment()
+	if options.rootdir == "/" then
+		create_boot_environment()
+	end
 
 	-- This is the point of no return, execute_conversion() will start mutating
 	-- global system state.
