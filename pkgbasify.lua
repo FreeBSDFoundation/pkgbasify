@@ -394,15 +394,6 @@ local function setup_conversion(workdir)
 	end
 
 	if options.create_repo_conf then
-		-- Since the REPOS_DIR config option is not affected by --rootdir, it's not easy
-		-- to check the value for the system in the options.rootdir.
-		-- TODO using grep and test here is not idiomatic lua, improve this
-		if options.rootdir == "/" and
-			not os.execute("pkg config REPOS_DIR | grep " .. repo_conf_dir() .. " > /dev/null 2>&1")
-		then
-			fatal("Non-standard pkg REPOS_DIR config does not include " .. repo_conf_dir())
-		end
-
 		-- The repo_conf_file is created/overwritten in execute_conversion()
 		if os.execute("test -e " .. repo_conf_file()) then
 			if not prompt_yn("Overwrite " .. repo_conf_file() .. "?") then
