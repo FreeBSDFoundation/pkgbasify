@@ -69,7 +69,8 @@ local function freebsd_version()
 		raw = capture("freebsd-version")
 	end
 	-- e.g. 15.0-CURRENT, 14.2-STABLE, 14.1-RxLEASE, 14.1-RELEASE-p6,
-	return assert(raw:match("(%d+)%.(%d+)%-(%u+)")), raw
+	local major, minor, branch = assert(raw:match("(%d+)%.(%d+)%-(%u+)"))
+	return major, minor, branch, raw
 end
 
 -- Returns the URL for the pkgbase repository that matches the version
