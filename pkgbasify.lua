@@ -12,7 +12,8 @@
 local options = {
 	create_repo_conf = true,
 	repo_name = "FreeBSD-base",
-	rootdir = "/"
+	rootdir = "/",
+	jail = nil,
 }
 
 local function repo_conf_dir()
@@ -61,15 +62,20 @@ local function fatal(msg)
 end
 
 local function freebsd_version()
-	-- e.g. 15.0-CURRENT, 14.2-STABLE, 14.1-RELEASE, 14.1-RELEASE-p6,
-	local raw = capture("freebsd-version")
-	return assert(raw:match("(%d+)%.(%d+)%-(%u+)"))
+	local raw
+	if options.jail then
+		raw = capture("freebsd-version -j " .. options.jail)
+	else
+		raw = capture("freebsd-version")
+	end
+	-- e.g. 15.0-CURRENT, 14.2-STABLE, 14.1-RxLEASE, 14.1-RELEASE-p6,
+	return assert(raw:match("(%d+)%.(%d+)%-(%u+)")), raw
 end
 
 -- Returns the URL for the pkgbase repository that matches the version
 -- reported by freebsd-version(1)
 local function base_repo_url()
-	local major, minor, branch = freebsd_version()
+	local major, minor, branch, raw = freebsd_version()
 	if math.tointeger(major) < 14 then
 		fatal("Unsupported FreeBSD version: " .. raw)
 	end
@@ -501,7 +507,9 @@ Usage: pkgbasify.lua [options]
     --repo-name <name>    Name of the pkgbase repository (Default: FreeBSD-base)
     --no-create-repo-conf Don't create a repository configuration,
                           requires the user to configure a pkgbase repository
-    --rootdir <dir>  Operate on the given directory rather than /
+    --rootdir <dir>       Operate on the given directory rather than /
+    --jail <jail>		  Operate on the jail with the given jid or name,
+                          matching the version of the jail's userland.
 ]]
 
 local function parse_options()
@@ -526,6 +534,13 @@ local function parse_options()
 				fatal("--rootdir requires an argument")
 			end
 			options.rootdir = arg[i]
+		elseif arg[i] == "--jail" then
+			i = i + 1
+			if i > #arg then
+				fatal("--jail requires an argument")
+			end
+			options.jail = arg[i]
+			options.rootdir = capture("jls -j " .. options.jail .. " -h path"):match(".+\n(.*)")
 		else
 			io.stderr:write("Error: unknown option " .. arg[i] .. "\n")
 			io.stderr:write(usage)
