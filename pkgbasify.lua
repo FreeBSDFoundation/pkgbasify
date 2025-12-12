@@ -17,7 +17,7 @@ local options = {
 }
 
 local function repo_conf_dir()
-	return options.rootdir .. "/usr/local/etc/pkg/repos/"
+	return options.rootdir .. "usr/local/etc/pkg/repos/"
 end
 local function repo_conf_file()
 	return repo_conf_dir() .. options.repo_name .. ".conf"
@@ -534,6 +534,9 @@ local function parse_options()
 				fatal("--rootdir requires an argument")
 			end
 			options.rootdir = arg[i]
+			if options.rootdir:sub(-1) ~= "/" then
+				options.rootdir = options.rootdir .. "/"
+			end
 		elseif arg[i] == "--jail" then
 			i = i + 1
 			if i > #arg then
