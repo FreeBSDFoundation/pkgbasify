@@ -559,7 +559,7 @@ Usage: pkgbasify.lua [options]
     --no-create-repo-conf Don't create a repository configuration,
                           requires the user to configure a pkgbase repository
     --rootdir <dir>       Operate on the given directory rather than /
-    --jail <jail>		  Operate on the jail with the given jid or name,
+    --jail <jail>         Operate on the jail with the given jid or name,
                           matching the version of the jail's userland.
 ]]
 
