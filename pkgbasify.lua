@@ -643,6 +643,14 @@ This will cause conversion to fail as pkg will be unable to set the time of
 		os.exit(1)
 	end
 
+	-- It seems that pkg 2.2.x versions segfault during the installation step
+	-- unless separately upgraded first. Pkg is supposed to always upgrade
+	-- itself first in theory, but there have been mulitple reports of old
+	-- pkg versions segfaulting/failing to do so in the wild.
+	if not os.execute("pkg upgrade pkg") then
+		fatal("Failed to upgrade pkg.")
+	end
+
 	local workdir = capture("mktemp -d -t pkgbasify")
 
 	local package_list = setup_conversion(workdir)
