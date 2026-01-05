@@ -70,14 +70,14 @@ local function freebsd_version()
 	end
 	-- e.g. 15.0-CURRENT, 14.2-STABLE, 14.1-RxLEASE, 14.1-RELEASE-p6,
 	local major, minor, branch = assert(raw:match("(%d+)%.(%d+)%-(%u+)"))
-	return major, minor, branch, raw
+	return math.tointeger(major), math.tointeger(minor), branch, raw
 end
 
 -- Returns the URL for the pkgbase repository that matches the version
 -- reported by freebsd-version(1)
 local function base_repo_url()
 	local major, minor, branch, raw = freebsd_version()
-	if math.tointeger(major) < 14 then
+	if major < 14 then
 		fatal("Unsupported FreeBSD version: " .. raw)
 	end
 	if branch == "RELEASE" or branch:match("^BETA") or branch:match("^RC") then
@@ -96,7 +96,7 @@ end
 local function create_base_repo_conf(path)
 	assert(os.execute("mkdir -p " .. path:match(".*/")))
 	local f <close> = assert(io.open(path, "w"))
-	if math.tointeger(freebsd_version()) >= 15 then
+	if freebsd_version() >= 15 then
 		assert(f:write(string.format([[
 %s: {
   enabled: yes
@@ -368,6 +368,61 @@ local function select_packages(pkg)
 	return selected
 end
 
+local function select_package_sets(pkg)
+	local components = {
+		["kernel"] = {},
+		["kernel-dbg"] = {},
+	}
+
+	local kernel_packages = {
+		-- Most architectures use this
+		["FreeBSD-kernel-generic"] = true,
+		-- PowerPC uses either of these, depending on platform
+		["FreeBSD-kernel-generic64"] = true,
+		["FreeBSD-kernel-generic64le"] = true,
+	}
+
+	local rquery = capture(pkg .. "rquery -U -r FreeBSD-base %n")
+	for package in rquery:gmatch("[^\n]+") do
+		local setname = package:match("^FreeBSD%-set%-(.+)$")
+		if setname then
+			components[setname] = components[setname] or {}
+			table.insert(components[setname], package)
+		elseif kernel_packages[package] then
+			table.insert(components["kernel"], package)
+		elseif kernel_packages[package:match("(.*)%-dbg$")] then
+			table.insert(components["kernel-dbg"], package)
+		end
+	end
+	assert(#components["kernel"] > 0)
+	assert(#components["base"] > 0)
+
+	local selected = {}
+	append_list(selected, components["base"])
+	if os.execute("test -e " .. options.rootdir .. "/usr/lib/debug/lib/libc.so.7.debug") then
+		append_list(selected, components["base-dbg"])
+	end
+	if not options.jail then
+		append_list(selected, components["kernel"])
+		if non_empty_dir(options.rootdir .. "/usr/lib/debug/boot/kernel") then
+			append_list(selected, components["kernel-dbg"])
+		end
+	end
+	-- Checking if /usr/lib32 is non-empty is not sufficient, as base.txz
+	-- includes several empty /usr/lib32 subdirectories.
+	if os.execute("test -e " .. options.rootdir .. "/usr/lib32/libc.so.7") then
+		append_list(selected, components["lib32"])
+	end
+	if os.execute("test -e " .. options.rootdir .. "/usr/lib/debug/usr/lib32/libc.so.7.debug") then
+		append_list(selected, components["lib32-dbg"])
+	end
+	if non_empty_dir(options.rootdir .. "/usr/tests") then
+		append_list(selected, components["tests"])
+	end
+
+	return selected
+end
+
 local function setup_conversion(workdir)
 	-- We must make a copy of the etcupdate db before running pkg install as
 	-- the etcupdate db matching the pre-pkgbasify system state will be overwritten.
@@ -404,7 +459,11 @@ local function setup_conversion(workdir)
 		end
 	end
 
-	return select_packages(pkg)
+	if freebsd_version() >= 15 then
+		return select_package_sets(pkg)
+	else
+		return select_packages(pkg)
+	end
 end
 
 local function bootstrap_pkg()
