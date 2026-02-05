@@ -128,30 +128,6 @@ local function check_err(ok, err_msg)
 	end
 end
 
-local function merge_pkgsaves(workdir)
-	local old_dir = workdir .. "/current"
-	for old in capture("find " .. old_dir .. " -type f"):gmatch("[^\n]+") do
-		local path = old:sub(#old_dir + 1)
-		assert(path:sub(1,1) == "/")
-		local theirs = options.rootdir .. path
-		local ours = theirs .. ".pkgsave"
-		if os.execute("test -e " .. ours) then
-			local merged = workdir .. "/merged/" .. path
-			check_err(os.execute("mkdir -p " .. merged:match(".*/")))
-			-- Using cat and a redirection rather than, for example, mv preserves
-			-- file attributes of theirs (mode, ownership, etc). This is critical
-			-- when merging executable scripts in /etc/rc.d/ for example.
-			if os.execute("diff3 -m " .. ours .. " " .. old .. " " .. theirs .. " > " .. merged) and
-				os.execute("cat " .. merged .. " > " .. theirs)
-			then
-				print("Merged " .. theirs)
-			else
-				print("Failed to merge " .. theirs .. ", manual intervention may be necessary")
-			end
-		end
-	end
-end
-
 local function execute_conversion(workdir, package_list)
 	if options.create_repo_conf then
 		if os.execute("test -e " .. repo_conf_file()) then
@@ -186,10 +162,18 @@ local function execute_conversion(workdir, package_list)
 	-- pkg install is not necessarily fully atomic, even if it fails some subset
 	-- of the packages may have been installed. Therefore, we must attempt all
 	-- followup work even if install fails.
-	check_err(os.execute(pkg .. " install --no-repo-update -y -r " ..
+	check_err(os.execute(pkg .. " install --register-only --no-repo-update -y -r " ..
 		options.repo_name .. " " .. packages))
 
-	merge_pkgsaves(workdir)
+	local query = capture(pkg .. "query %n")
+	local registered_base_packages = {}
+	for package in query:gmatch("[^\n]+") do
+		if package:match("FreeBSD%-.*") then
+			table.insert(registered_base_packages, package)
+		end
+	end
+	check_err(os.execute(pkg .. " install -f --no-repo-update -y -r " ..
+		options.repo_name .. " " .. table.concat(registered_base_packages, " ")))
 
 	if options.rootdir == "/" then
 		if os.execute("service sshd status > /dev/null 2>&1") then
@@ -426,11 +410,6 @@ local function select_package_sets(pkg)
 end
 
 local function setup_conversion(workdir)
-	-- We must make a copy of the etcupdate db before running pkg install as
-	-- the etcupdate db matching the pre-pkgbasify system state will be overwritten.
-	assert(os.execute("cp -a " .. options.rootdir .. "/var/db/etcupdate/current " ..
-		workdir .. "/current"))
-
 	-- Use a temporary pkg db until we are sure we will carry through with the
 	-- conversion to avoid polluting the standard one.
 	-- Let pkg handle actually creating the pkgdb directory so that it sets the
@@ -551,6 +530,17 @@ not detect and handle insufficient space gracefully during installation.
 	end
 end
 
+local function check_pkg_version()
+	local raw = capture("pkg --version")
+	local major, minor = assert(raw:match("(%d+)%.(%d+)%..+"))
+	if math.tointeger(major) < 2 or math.tointeger(minor) < 7 then
+		err(string.format("pkg version too old! required: 2.7+, found: %s", raw))
+		err("Using a pkg version older than 2.7 would result in loss of system config file contents.")
+		return false
+	end
+	return true
+end
+
 local usage = [[
 Usage: pkgbasify.lua [options]
 
@@ -651,6 +641,10 @@ This will cause conversion to fail as pkg will be unable to set the time of
 	-- pkg versions segfaulting/failing to do so in the wild.
 	if not os.execute("pkg upgrade pkg") then
 		fatal("Failed to upgrade pkg.")
+	end
+
+	if not check_pkg_version() then
+		os.exit(1)
 	end
 
 	local workdir = capture("mktemp -d -t pkgbasify")
