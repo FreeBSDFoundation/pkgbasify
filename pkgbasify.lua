@@ -23,13 +23,24 @@ local function repo_conf_file()
 	return repo_conf_dir() .. options.repo_name .. ".conf"
 end
 
+local function err(msg)
+	io.stderr:write("Error: " .. msg .. "\n")
+end
+
+local function fatal(msg)
+	err(msg)
+	os.exit(1)
+end
+
 -- Run a command using the OS shell and capture the stdout
 -- Strips exactly one trailing newline if present, does not strip any other whitespace.
 -- Asserts that the command exits cleanly
 local function capture(command)
 	local p = io.popen(command)
 	local output = p:read("*a")
-	assert(p:close())
+	if not p:close() then
+		fatal("failed to execute the following command:\n" .. command)
+	end
 	-- Strip exactly one trailing newline from the output, if there is one
 	return output:match("(.-)\n$") or output
 end
@@ -50,15 +61,6 @@ local function append_list(list, other)
 	for _, item in ipairs(other) do
 		table.insert(list, item)
 	end
-end
-
-local function err(msg)
-	io.stderr:write("Error: " .. msg .. "\n")
-end
-
-local function fatal(msg)
-	err(msg)
-	os.exit(1)
 end
 
 local function freebsd_version()
