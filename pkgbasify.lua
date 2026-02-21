@@ -384,7 +384,7 @@ local function select_package_sets(pkg)
 		["FreeBSD-kernel-generic64le"] = true,
 	}
 
-	local rquery = capture(pkg .. "rquery -U -r FreeBSD-base %n")
+	local rquery = capture(pkg .. "rquery -U -r " .. options.repo_name .. " %n")
 	for package in rquery:gmatch("[^\n]+") do
 		local setname = package:match("^FreeBSD%-set%-(.+)$")
 		if setname then
