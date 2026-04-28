@@ -100,15 +100,3 @@ Error: exit
 
 This may be caused by having a zfs filesystem `zroot/var/empty` with the property `readonly=on`.
 Set `readonly=off` and run `./pkgbasify.lua --force` to finish conversion.
-
-### "Fail to rename ..." while extracting FreeBSD-src
-
-```
-[323/371] Installing FreeBSD-src-14.1p8...
-[323/371] Extracting FreeBSD-src-14.1p8: 100%
-pkg: Fail to rename /usr/src/contrib/llvm-project/libcxx/include/.pkgtemp.__string.olNBRRqZQLwR -> /usr/src/contrib/llvm-project/libcxx/include/__string:Not a directory
-Error: exit
-```
-
-This can be caused by a dirty `/usr/src` directory.
-The recommended fix is to remove `/usr/src` and run `./pkgbasify.lua --force` to finish conversion and let pkg fully reinstall `/usr/src`.
