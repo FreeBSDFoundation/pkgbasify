@@ -31,7 +31,7 @@ Download the script, give it permission to execute, run it as root:
 If conversion succeeds: 
 
 4. Verify that expected users and groups are present in `/etc/master.passwd` and `/etc/group`, and that `/etc/ssh/sshd_config` is as expected.
-   These should be handled automatically by pkgbasify, but since the consequences are high it is recommended to double check.
+   These should be handled automatically by [pkg(8)], but since the consequences are high it is recommended to double check.
 5. Restart the system.
 
 If there is an error during installation of the pkgbase packages, the system may be left in a partially-converted state.
@@ -43,29 +43,23 @@ See also [Common Problems and Solutions](#common-problems-and-solutions).
 
 pkgbasify performs the following steps:
 
-1. Make a copy of the [etcupdate(8)] current database (`/var/db/etcupdate/current`).
-   This makes it possible for pkgbasify to merge config files after converting the system.
-2. Select a repository based on the output of [freebsd-version(1)] and create `/usr/local/etc/pkg/repos/FreeBSD-base.conf`.
-3. Select packages that correspond to the currently installed base system components.
+1. Select a repository based on the output of [freebsd-version(1)] and create `/usr/local/etc/pkg/repos/FreeBSD-base.conf`.
+2. Select package sets that correspond to the currently installed base system components.
    - For example: if the lib32 component is not already installed,
-     pkgbasify will skip installation of lib32 packages.
-   - pkgbasify never installs the `FreeBSD-src` package even if `/usr/src` is present and non-empty.
+     pkgbasify will not install `FreeBSD-set-lib32`.
+   - pkgbasify never installs `FreeBSD-set-src` package even if `/usr/src` is present and non-empty.
      This prevents unwanted overwriting of potentially modified source files and/or a VCS repository.
-4. Prompt the user to create a "pre-pkgbasify" boot environment using [bectl(8)] if possible.
-5. Install the selected packages with [pkg(8)],
-   overwriting base system files and creating `.pkgsave` files as per standard [pkg(8)] behavior.
-6. Run a three-way-merge between the `.pkgsave` files (ours),
-   the new files installed by pkg (theirs),
-   and the old files in the copy of the etcupdate database.
-   - If there are merge conflicts, an error is logged and manual intervention may be required.
-   - `.pkgsave` files without a corresponding entry in the old etcupdate database are skipped.
+3. Prompt the user to create a "pre-pkgbasify" boot environment using [bectl(8)] if possible.
+4. Download selected packages
+5. Register selected packages in the pkg database without installing any files (`pkg install --register-only`).
+6. Install selected packages, overwriting normal files and merging config files (`pkg install --force`).
+   - As per normal [pkg(8)] behavior, `.pkgnew` files are created for config files for which merge fails.
 7. If [sshd(8)] is running, restart the service.
 8. Run [pwd_mkdb(8)] and [cap_mkdb(1)].
 9. Remove `/boot/kernel/linker.hints`.
 
 [bectl(8)]: https://man.freebsd.org/cgi/man.cgi?query=bectl&sektion=8&manpath=freebsd-release
 [pkgbase]: https://wiki.freebsd.org/PkgBase
-[etcupdate(8)]: https://man.freebsd.org/cgi/man.cgi?query=etcupdate&sektion=8&manpath=freebsd-release
 [freebsd-version(1)]: https://man.freebsd.org/cgi/man.cgi?query=freebsd-version&sektion=1&manpath=freebsd-release
 [pkg(8)]: https://man.freebsd.org/cgi/man.cgi?query=pkg&sektion=8&manpath=freebsd-ports
 [sshd(8)]: https://man.freebsd.org/cgi/man.cgi?query=sshd&sektion=8&manpath=freebsd-release
