@@ -9,6 +9,14 @@
 
 -- See also the pkgbase wiki page: https://wiki.freebsd.org/PkgBase
 
+-- While a pkgbasify release is in development, this string should contain
+-- the version in development with the "-dev" suffix.
+-- When a release is tagged, the "-dev" suffix should be removed for the
+-- commit that gets tagged.
+-- Directly after the tagged commit, the version should be bumped and the
+-- "-dev" suffix added.
+local version = "1.0.0-dev"
+
 local options = {
 	create_repo_conf = true,
 	repo_name = "FreeBSD-base",
@@ -545,6 +553,7 @@ local usage = [[
 Usage: pkgbasify.lua [options]
 
     -h, --help            Print this usage message and exit
+    --version             Print the version and exit
     --force               Attempt conversion even if /usr/bin/uname
                           is owned by a package.
     --repo-name <name>    Name of the pkgbase repository (Default: FreeBSD-base)
@@ -560,6 +569,9 @@ local function parse_options()
 	while i <= #arg do
 		if arg[i] == "-h" or arg[i] == "--help" then
 			io.stdout:write(usage)
+			os.exit(0)
+		elseif arg[i] == "--version" then
+			io.stdout:write(version .. "\n")
 			os.exit(0)
 		elseif arg[i] == "--force" then
 			options.force = true
