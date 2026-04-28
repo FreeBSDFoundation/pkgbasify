@@ -15,7 +15,7 @@
 -- commit that gets tagged.
 -- Directly after the tagged commit, the version should be bumped and the
 -- "-dev" suffix added.
-local version = "1.0.0"
+local version = "1.1.0-dev"
 
 local options = {
 	create_repo_conf = true,
