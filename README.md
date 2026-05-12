@@ -43,20 +43,22 @@ See also [Common Problems and Solutions](#common-problems-and-solutions).
 
 pkgbasify performs the following steps:
 
-1. Select a repository based on the output of [freebsd-version(1)] and create `/usr/local/etc/pkg/repos/FreeBSD-base.conf`.
-2. Select package sets that correspond to the currently installed base system components.
+1. Select a repository based on the output of [freebsd-version(1)].
+2. If the version of FreeBSD is lower than 15, create `FreeBSD-base.conf` at `/usr/local/etc/pkg/repos` (do not alter a `FreeBSD.conf` at this path).
+3. If the version of FreeBSD is 15 or higher, use `/usr/local/etc/pkg/repos/FreeBSD.conf` to enable the _FreeBSD-base_ repository.
+4. Select package sets that correspond to the currently installed base system components.
    - For example: if the lib32 component is not already installed,
      pkgbasify will not install `FreeBSD-set-lib32`.
    - pkgbasify never installs `FreeBSD-set-src` package even if `/usr/src` is present and non-empty.
      This prevents unwanted overwriting of potentially modified source files and/or a VCS repository.
-3. Prompt the user to create a "pre-pkgbasify" boot environment using [bectl(8)] if possible.
-4. Download selected packages
-5. Register selected packages in the pkg database without installing any files (`pkg install --register-only`).
-6. Install selected packages, overwriting normal files and merging config files (`pkg install --force`).
+5. Prompt the user to create a "pre-pkgbasify" boot environment using [bectl(8)] if possible.
+6. Download selected packages
+7. Register selected packages in the pkg database without installing any files (`pkg install --register-only`).
+8. Install selected packages, overwriting normal files and merging config files (`pkg install --force`).
    - As per normal [pkg(8)] behavior, `.pkgnew` files are created for config files for which merge fails.
-7. If [sshd(8)] is running, restart the service.
-8. Run [pwd_mkdb(8)] and [cap_mkdb(1)].
-9. Remove `/boot/kernel/linker.hints`.
+9. If [sshd(8)] is running, restart the service.
+10. Run [pwd_mkdb(8)] and [cap_mkdb(1)].
+11. Remove `/boot/kernel/linker.hints`.
 
 [bectl(8)]: https://man.freebsd.org/cgi/man.cgi?query=bectl&sektion=8&manpath=freebsd-release
 [pkgbase]: https://wiki.freebsd.org/PkgBase
