@@ -538,6 +538,28 @@ not detect and handle insufficient space gracefully during installation.
 	end
 end
 
+-- pkgbasify requires pkg 2.7+ but the latest version available in the current
+-- quarterly release is pkg 2.6. Upgrade pkg from the latest repos so that we
+-- can get 2.7+.
+-- This hack can be removed after the next quarterly ports branch is cut.
+local function upgrade_pkg_from_latest()
+	local repos_dir = capture("mktemp -d -t pkgbasify-ports-latest")
+	local path = repos_dir .. "/FreeBSD.conf"
+	local f = assert(io.open(path, "w"))
+	assert(f:write(string.format([[
+FreeBSD: {
+  url: "pkg+http://pkg.FreeBSD.org/${ABI}/latest",
+  mirror_type: "srv",
+  signature_type: "fingerprints",
+  fingerprints: "/usr/share/keys/pkg",
+  enabled: yes
+}
+]])))
+	-- This must be closed before running the pkg command to flush the write.
+	f:close()
+	return os.execute("pkg -o REPOS_DIR=" .. repos_dir .. " upgrade -y pkg")
+end
+
 local function check_pkg_version()
 	local raw = capture("pkg --version")
 	local major, minor = assert(raw:match("(%d+)%.(%d+)%..+"))
@@ -647,16 +669,18 @@ This will cause conversion to fail as pkg will be unable to set the time of
 		os.exit(1)
 	end
 
-	-- It seems that pkg 2.2.x versions segfault during the installation step
-	-- unless separately upgraded first. Pkg is supposed to always upgrade
-	-- itself first in theory, but there have been mulitple reports of old
-	-- pkg versions segfaulting/failing to do so in the wild.
 	if not os.execute("pkg upgrade pkg") then
 		fatal("Failed to upgrade pkg.")
 	end
 
 	if not check_pkg_version() then
-		os.exit(1)
+		if prompt_yn("Install pkg 2.7 from the latest ports branch?") then
+			if not upgrade_pkg_from_latest() then
+				fatal("failed to upgrade pkg")
+			end
+		else
+			os.exit(1)
+		end
 	end
 
 	local workdir = capture("mktemp -d -t pkgbasify")
