@@ -136,7 +136,7 @@ local function check_err(ok, err_msg)
 	end
 end
 
-local function execute_conversion(workdir, package_list)
+local function execute_conversion(package_list)
 	if options.create_repo_conf then
 		if os.execute("test -e " .. repo_conf_file()) then
 			print("Overwriting " .. repo_conf_file())
@@ -697,7 +697,7 @@ This will cause conversion to fail as pkg will be unable to set the time of
 	-- it was in before running pkgbasify.
 	-- After this point, no error should be fatal and pkgbasify should attempt
 	-- to finish conversion regardless of what happens.
-	execute_conversion(workdir, package_list)
+	execute_conversion(package_list)
 end
 
 main()
