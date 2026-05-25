@@ -41,9 +41,9 @@ See also [Common Problems and Solutions](#common-problems-and-solutions).
 
 ## Behavior
 
-pkgbasify performs the following steps:
+On FreeBSD 15, pkgbasify performs the following steps:
 
-1. Select a repository based on the output of [freebsd-version(1)] and create `/usr/local/etc/pkg/repos/FreeBSD-base.conf`.
+1. Select a repository based on the output of [freebsd-version(1)] and create `/usr/local/etc/pkg/repos/FreeBSD.conf`.
 2. Select package sets that correspond to the currently installed base system components.
    - For example: if the lib32 component is not already installed,
      pkgbasify will not install `FreeBSD-set-lib32`.
