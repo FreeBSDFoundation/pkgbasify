@@ -531,7 +531,7 @@ local function check_disk_space()
 	else
 		print([[
 Less than 5GiB space available on the root filesystem.
-It is recommended to have at lest 5GiB available before conversion as pkg does
+It is recommended to have at least 5GiB available before conversion as pkg does
 not detect and handle insufficient space gracefully during installation.
 ]])
 		return prompt_yn("Continue despite possibly insufficient disk space?")
