@@ -22,6 +22,15 @@ Conversion can likely succeed with less, but pkg is [not yet](https://github.com
 able to detect and handle insufficient space gracefully.
 It can be difficult to recover if the system runs out of space during conversion.
 
+pkgbasify runs several pre-flight checks before starting conversion:
+
+- **Securelevel**: `kern.securelevel` must be less than 1, otherwise system immutable flags (`schg`) cannot be cleared and pkg will be unable to overwrite protected base system files. pkgbasify will refuse to proceed if this check fails.
+- **chflags**: The ability to set and clear file flags is tested. This can fail due to elevated securelevel, or in a jail without `allow.chflags`. pkgbasify will refuse to proceed if this check fails.
+- **Jail detection**: If running inside a jail, pkgbasify will warn and recommend using `--jail` from the host instead (see [Jail Conversion](#jail-conversion)). The user may choose to proceed.
+- **Disk space**: At least 5 GiB free on the root filesystem.
+- **Read-only `/var/empty`**: On ZFS, `/var/empty` must not be a read-only filesystem.
+- **Symlinks in `/etc`**: Unexpected symlinks are flagged since pkg may overwrite them.
+
 Download the script, give it permission to execute, run it as root:
 
 1. `fetch https://github.com/FreeBSDFoundation/pkgbasify/raw/refs/heads/main/pkgbasify.lua`
@@ -39,24 +48,79 @@ In this case, the user should fix whatever issue caused the error and run `./pkg
 
 See also [Common Problems and Solutions](#common-problems-and-solutions).
 
+## Options
+
+```
+-h, --help            Print usage message and exit
+--version             Print the version and exit
+--force               Attempt conversion even if /usr/bin/uname
+                      is already owned by a package (e.g. to fix
+                      a partial conversion)
+--repo-name <name>    Name of the pkgbase repository
+                      (default: FreeBSD-base)
+--no-create-repo-conf Don't create a repository configuration;
+                      requires the user to configure a pkgbase
+                      repository manually
+--rootdir <dir>       Operate on the given directory rather than /
+--jail <jail>         Operate on the jail with the given jid or
+                      name, matching the version of the jail's
+                      userland (see "Jail Conversion" below)
+```
+
+## Jail Conversion
+
+pkgbasify can convert a jail to pkgbase in two ways:
+
+### From the host (recommended)
+
+Run pkgbasify on the host system with the `--jail` flag:
+
+```
+./pkgbasify.lua --jail <jid-or-name>
+```
+
+This is the recommended approach because the host has full access to
+modify files inside the jail without any privilege restrictions.
+
+### From inside the jail
+
+Running pkgbasify directly inside a jail is possible but may fail if
+the jail lacks sufficient privileges. pkgbasify will detect that it is
+running inside a jail and warn about potential issues.
+
+The general securelevel and chflags pre-flight checks (described in
+[Usage](#usage)) are particularly relevant inside jails:
+
+- A jail inherits its securelevel from the host if not explicitly set.
+  If the host has `kern.securelevel >= 1`, the jail will too.
+- The jail must be configured with `allow.chflags` (or `enforce_statfs`
+  set appropriately) for pkg to manipulate file flags.
+
+If these checks fail, pkgbasify will warn and offer to continue, but
+conversion will very likely fail.
+
+Kernel packages are automatically excluded when converting a jail, as
+jails share the host kernel.
+
 ## Behavior
 
 On FreeBSD 15, pkgbasify performs the following steps:
 
-1. Select a repository based on the output of [freebsd-version(1)] and create `/usr/local/etc/pkg/repos/FreeBSD.conf`.
-2. Select package sets that correspond to the currently installed base system components.
+1. Run pre-flight checks (securelevel, chflags, jail detection, disk space, `/var/empty` readonly, `/etc` symlinks).
+2. Select a repository based on the output of [freebsd-version(1)] and create `/usr/local/etc/pkg/repos/FreeBSD.conf`.
+3. Select package sets that correspond to the currently installed base system components.
    - For example: if the lib32 component is not already installed,
      pkgbasify will not install `FreeBSD-set-lib32`.
    - pkgbasify never installs `FreeBSD-set-src` package even if `/usr/src` is present and non-empty.
      This prevents unwanted overwriting of potentially modified source files and/or a VCS repository.
-3. Prompt the user to create a "pre-pkgbasify" boot environment using [bectl(8)] if possible.
-4. Download selected packages
-5. Register selected packages in the pkg database without installing any files (`pkg install --register-only`).
-6. Install selected packages, overwriting normal files and merging config files (`pkg install --force`).
+4. Prompt the user to create a "pre-pkgbasify" boot environment using [bectl(8)] if possible.
+5. Download selected packages
+6. Register selected packages in the pkg database without installing any files (`pkg install --register-only`).
+7. Install selected packages, overwriting normal files and merging config files (`pkg install --force`).
    - As per normal [pkg(8)] behavior, `.pkgnew` files are created for config files for which merge fails.
-7. If [sshd(8)] is running, restart the service.
-8. Run [pwd_mkdb(8)] and [cap_mkdb(1)].
-9. Remove `/boot/kernel/linker.hints`.
+8. If [sshd(8)] is running, restart the service.
+9. Run [pwd_mkdb(8)] and [cap_mkdb(1)].
+10. Remove `/boot/kernel/linker.hints`.
 
 [bectl(8)]: https://man.freebsd.org/cgi/man.cgi?query=bectl&sektion=8&manpath=freebsd-release
 [pkgbase]: https://wiki.freebsd.org/PkgBase

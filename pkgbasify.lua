@@ -522,6 +522,44 @@ local function check_no_readonly_var_empty()
 	return capture("zfs get -H -o value readonly /var/empty") == "off"
 end
 
+local function check_securelevel()
+	local securelevel = math.tointeger(capture("sysctl -n kern.securelevel"))
+	if securelevel and securelevel >= 1 then
+		fatal(string.format([[
+kern.securelevel is %d (>= 1).
+This prevents clearing system file flags (e.g. schg) which is required
+for pkg to overwrite base system files.]], securelevel))
+	end
+end
+
+local function check_chflags()
+	local chflags_ok = os.execute("touch /tmp/.pkgbasify_chflags_test 2>/dev/null" ..
+		" && chflags schg /tmp/.pkgbasify_chflags_test 2>/dev/null")
+	if chflags_ok then
+		os.execute("chflags noschg /tmp/.pkgbasify_chflags_test 2>/dev/null")
+		os.execute("rm -f /tmp/.pkgbasify_chflags_test 2>/dev/null")
+	else
+		os.execute("rm -f /tmp/.pkgbasify_chflags_test 2>/dev/null")
+		fatal([[
+chflags operations do not appear to be permitted.
+pkg needs chflags to replace base system files with schg flags set.
+Conversion cannot proceed without chflags support.]])
+	end
+end
+
+local function check_jail_environment()
+	if capture("sysctl -n security.jail.jailed") ~= "1" then
+		return true
+	end
+
+	print("Warning: pkgbasify is running inside a jail.")
+	print("It is recommended to run pkgbasify from the host system using --jail instead.")
+	print("Running inside the jail may fail if the jail lacks sufficient privileges.")
+	print("")
+
+	return prompt_yn("Continue running inside this jail anyway?")
+end
+
 local function check_disk_space()
 	-- KiB available on the root filesystem
 	local avail = tonumber(capture(
@@ -647,6 +685,12 @@ local function main()
 		fatal([[
 The system is already using pkgbase.
 Pass --force to run pkgbasify anyway, for example to fix a partial conversion.]])
+	end
+	check_securelevel()
+	check_chflags()
+	if not check_jail_environment() then
+		print("Canceled")
+		os.exit(1)
 	end
 	if not check_disk_space() then
 		print("Canceled")
